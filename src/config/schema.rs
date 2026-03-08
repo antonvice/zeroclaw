@@ -2781,6 +2781,10 @@ pub struct TelegramConfig {
     /// Direct messages are always processed.
     #[serde(default)]
     pub mention_only: bool,
+    /// When true, anyone who mentions the bot in a group will get a response, even if not allowlisted.
+    /// Private messages still require allowlisting.
+    #[serde(default)]
+    pub allow_group_mentions: bool,
     /// Parse and transcribe voice messages using local `whisper-rs`
     #[serde(default)]
     pub voice_messages: bool,
@@ -2871,6 +2875,8 @@ pub struct MattermostConfig {
     /// Other messages in the channel are silently ignored.
     #[serde(default)]
     pub mention_only: Option<bool>,
+    /// When true, anyone who mentions the bot in a group will get a response.
+    pub allow_group_mentions: Option<bool>,
 }
 
 impl ChannelConfig for MattermostConfig {
@@ -5170,6 +5176,7 @@ default_temperature = 0.7
                     draft_update_interval_ms: default_draft_update_interval_ms(),
                     interrupt_on_new_message: false,
                     mention_only: false,
+                    allow_group_mentions: false,
                     voice_messages: false,
                     whisper_model: None,
                 }),
@@ -5539,10 +5546,9 @@ tool_dispatcher = "xml"
         let tc = TelegramConfig {
             bot_token: "123:XYZ".into(),
             allowed_users: vec!["alice".into(), "bob".into()],
-            stream_mode: StreamMode::Partial,
-            draft_update_interval_ms: 500,
             interrupt_on_new_message: false,
             mention_only: false,
+            allow_group_mentions: false,
             voice_messages: false,
             whisper_model: None,
         };

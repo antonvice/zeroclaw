@@ -314,6 +314,7 @@ pub struct TelegramChannel {
     workspace_dir: Option<std::path::PathBuf>,
     voice_messages_enabled: bool,
     whisper_model: Option<String>,
+    allow_group_mentions: bool,
 }
 
 impl TelegramChannel {
@@ -347,6 +348,7 @@ impl TelegramChannel {
             workspace_dir: None,
             voice_messages_enabled: false,
             whisper_model: None,
+            allow_group_mentions: false,
         }
     }
 
@@ -391,6 +393,12 @@ impl TelegramChannel {
     /// Set an optional path to a local whisper model.
     pub fn with_whisper_model(mut self, path: Option<String>) -> Self {
         self.whisper_model = path;
+        self
+    }
+
+    /// Enable responding to any user who mentions the bot in a group.
+    pub fn with_allow_group_mentions(mut self, enabled: bool) -> Self {
+        self.allow_group_mentions = enabled;
         self
     }
 
@@ -620,6 +628,28 @@ impl TelegramChannel {
         }
 
         spans
+    }
+
+    async fn get_or_fetch_bot_username(&self) -> Option<String> {
+        {
+            let guard = self.bot_username.lock();
+            if let Some(ref name) = *guard {
+                return Some(name.clone());
+            }
+        }
+
+        let url = self.api_url("getMe");
+        let resp = self.client.get(&url).send().await.ok()?;
+        let data: serde_json::Value = resp.json().await.ok()?;
+        let username = data
+            .get("result")
+            .and_then(|r| r.get("username"))
+            .and_then(serde_json::Value::as_str)?
+            .to_string();
+
+        let mut guard = self.bot_username.lock();
+        *guard = Some(username.clone());
+        Some(username)
     }
 
     fn contains_bot_mention(text: &str, bot_username: &str) -> bool {
@@ -1282,7 +1312,11 @@ Allowlist Telegram username (without '@') or numeric user ID.",
         Some(format!("> @{reply_sender}:\n{quoted_lines}"))
     }
 
-    fn parse_update_message(&self, update: &serde_json::Value) -> Option<ChannelMessage> {
+    fn parse_update_message(
+        &self,
+        update: &serde_json::Value,
+        bot_username: Option<&str>,
+    ) -> Option<ChannelMessage> {
         let message = update.get("message")?;
 
         let text = message.get("text").and_then(serde_json::Value::as_str)?;
@@ -1294,18 +1328,33 @@ Allowlist Telegram username (without '@') or numeric user ID.",
             identities.push(id);
         }
 
-        if !self.is_any_user_allowed(identities.iter().copied()) {
-            return None;
-        }
-
+        let is_allowed_user = self.is_any_user_allowed(identities.iter().copied());
         let is_group = Self::is_group_message(message);
-        if self.mention_only && is_group {
-            let bot_username = self.bot_username.lock();
-            if let Some(ref bot_username) = *bot_username {
-                if !Self::contains_bot_mention(&text, bot_username) {
+
+        if is_group {
+            let has_mention = if let Some(name) = bot_username {
+                Self::contains_bot_mention(&text, name)
+            } else {
+                false
+            };
+
+            if self.mention_only {
+                if !has_mention {
+                    return None;
+                }
+                // If mentioned, we allow if user is allowlisted OR if allow_group_mentions is true
+                if !is_allowed_user && !self.allow_group_mentions {
                     return None;
                 }
             } else {
+                // Not mention_only: only allow if user is allowlisted
+                if !is_allowed_user {
+                    return None;
+                }
+            }
+        } else {
+            // Private message: must be allowlisted
+            if !is_allowed_user {
                 return None;
             }
         }
@@ -1335,8 +1384,7 @@ Allowlist Telegram username (without '@') or numeric user ID.",
         };
 
         let content = if self.mention_only && is_group {
-            let bot_username = self.bot_username.lock();
-            let bot_username = bot_username.as_ref()?;
+            let bot_username = bot_username?;
             Self::normalize_incoming_content(&text, bot_username)?
         } else {
             text.to_string()
@@ -2651,13 +2699,17 @@ Ensure only one `zeroclaw` process is using this bot token."
             }
 
             if let Some(results) = data.get("result").and_then(serde_json::Value::as_array) {
+                let bot_username = self.get_or_fetch_bot_username().await;
+
                 for update in results {
                     // Advance offset past this update
                     if let Some(uid) = update.get("update_id").and_then(serde_json::Value::as_i64) {
                         offset = uid + 1;
                     }
 
-                    let msg = if let Some(m) = self.parse_update_message(update) {
+                    let msg = if let Some(m) =
+                        self.parse_update_message(update, bot_username.as_deref())
+                    {
                         m
                     } else if let Some(m) = self.try_parse_voice_message(update).await {
                         m

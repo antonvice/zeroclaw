@@ -3627,13 +3627,28 @@ fn setup_channels() -> Result<ChannelsConfig> {
                     println!("     Please ensure `ffmpeg` is installed on this machine and available in PATH.");
                 }
 
+                let mention_only = Confirm::new()
+                    .with_prompt("  Only respond to @mentions in groups (recommended for groups)?")
+                    .default(true)
+                    .interact()?;
+
+                let allow_group_mentions = if mention_only {
+                    Confirm::new()
+                        .with_prompt("  Allow anyone in the group to trigger the bot via @mention?")
+                        .default(false)
+                        .interact()?
+                } else {
+                    false
+                };
+
                 config.telegram = Some(TelegramConfig {
                     bot_token: token,
                     allowed_users,
                     stream_mode: StreamMode::default(),
                     draft_update_interval_ms: 1000,
                     interrupt_on_new_message: false,
-                    mention_only: false,
+                    mention_only,
+                    allow_group_mentions,
                     voice_messages,
                     whisper_model: None,
                 });

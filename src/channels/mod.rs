@@ -2699,7 +2699,8 @@ fn collect_configured_channels(
                 .with_transcription(config.transcription.clone())
                 .with_voice_messages(tg.voice_messages)
                 .with_whisper_model(tg.whisper_model.clone())
-                .with_workspace_dir(config.workspace_dir.clone()),
+                .with_workspace_dir(config.workspace_dir.clone())
+                .with_allow_group_mentions(tg.allow_group_mentions),
             ),
         });
     }

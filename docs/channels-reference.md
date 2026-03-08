@@ -317,7 +317,8 @@ app_secret = "xxx"
 encrypt_key = ""                    # optional
 verification_token = ""             # optional
 allowed_users = ["*"]
-mention_only = false              # optional: require @mention in groups (DMs always allowed)
+mention_only = false              # optional: In groups, the bot will only respond if @mentioned. Direct messages are always processed.
+allow_group_mentions = false      # optional: If true, any user in a group can trigger the bot via @mention, even if they aren't on your `allowed_users` list. Requires `mention_only = true`.
 use_feishu = false
 receive_mode = "websocket"          # or "webhook"
 port = 8081                          # required for webhook mode
